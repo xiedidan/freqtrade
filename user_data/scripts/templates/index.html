@@ -1,0 +1,1138 @@
+
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('title') }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-dark text-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-black mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-graph-up-arrow text-success me-2"></i>
+                ATRLevelSignal
+            </a>
+            <span class="badge bg-primary ms-2">{{ t('title') }}</span>
+            
+            <!-- Navigation links -->
+            <div class="collapse navbar-collapse ms-3" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">
+                            <i class="bi bi-layers me-1"></i>{{ t('manage_levels') }}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/signal_history">
+                            <i class="bi bi-clock-history me-1"></i>{{ t('signal_history') }}
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Language switcher -->
+            <div class="ms-auto">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" id="languageDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        {% if lang == 'en' %}
+                        <i class="bi bi-globe me-1"></i> English
+                        {% else %}
+                        <i class="bi bi-globe me-1"></i> 中文
+                        {% endif %}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" aria-labelledby="languageDropdown">
+                        <li><a class="dropdown-item {% if lang == 'en' %}active{% endif %}" href="/set_language/en">English</a></li>
+                        <li><a class="dropdown-item {% if lang == 'zh' %}active{% endif %}" href="/set_language/zh">中文</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Mobile toggler -->
+            <button class="navbar-toggler ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row">
+            <!-- Form section -->
+            <div class="col-lg-5">
+                <div class="card bg-dark border-primary mb-4">
+                    <div class="card-header bg-primary bg-gradient text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-plus-circle me-2"></i>{{ t('add_new_level') }}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="addLevelForm">
+                            <div class="mb-3">
+                                <label for="pairSearch" class="form-label">
+                                    <i class="bi bi-currency-exchange me-1"></i>{{ t('pair') }}
+                                </label>
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text bg-dark text-light border-secondary">
+                                        <i class="bi bi-search"></i>
+                                    </span>
+                                    <input type="text" class="form-control bg-dark text-light border-secondary" 
+                                           id="pairSearch" placeholder="{{ t('search_pairs') }}" autocomplete="off">
+                                </div>
+                                <select class="form-select bg-dark text-light border-secondary" 
+                                        id="pair" required size="8" style="overflow-y: auto;">
+                                    <option value="">{{ t('select_pair') }}</option>
+                                    {% for pair in pairs %}
+                                    <option value="{{ pair }}">{{ pair }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <div class="form-text text-muted small" id="pairCount">
+                                        <i class="bi bi-info-circle me-1"></i>{{ t('total_pairs', pairs|length) }}
+                                    </div>
+                                    <div id="loadingPairs" class="text-muted small" {% if not loading_all_pairs %}style="display:none"{% endif %}>
+                                        <div class="spinner-border spinner-border-sm text-primary me-1" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <span>{{ t('loading_pairs') }}</span>
+                                    </div>
+                                </div>
+                                <div id="pairsAlert" class="mt-2 small" style="display:none;">
+                                    <!-- Alert messages about pair loading will be shown here -->
+                                </div>
+                                <div class="d-flex justify-content-between mt-2">
+                                    <button type="button" id="refreshPairsBtn" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-arrow-clockwise me-1"></i>{{ t('refresh_pairs') }}
+                                    </button>
+                                    <button type="button" id="refreshBinanceUsdtSpotBtn" class="btn btn-sm btn-outline-info">
+                                        <i class="bi bi-currency-exchange me-1"></i>{{ t('refresh_binance_usdt_spot') }}
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="level" class="form-label">
+                                    <i class="bi bi-rulers me-1"></i>{{ t('price_level') }}
+                                </label>
+                                <input type="number" class="form-control bg-dark text-light border-secondary" 
+                                       id="level" step="any" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="direction" class="form-label">
+                                    <i class="bi bi-arrow-left-right me-1"></i>{{ t('direction') }}
+                                </label>
+                                <select class="form-select bg-dark text-light border-secondary" id="direction" required>
+                                    {% for direction in directions %}
+                                    <option value="{{ direction }}">
+                                        {% if direction == 'up' %}
+                                        <i class="bi bi-arrow-up"></i> {{ t('up') }}
+                                        {% elif direction == 'down' %}
+                                        <i class="bi bi-arrow-down"></i> {{ t('down') }}
+                                        {% elif direction == 'both' %}
+                                        <i class="bi bi-arrow-down-up"></i> {{ t('both') }}
+                                        {% elif direction == 'wick_up' %}
+                                        <i class="bi bi-arrow-bar-up"></i> {{ t('wick_up') }}
+                                        {% elif direction == 'wick_down' %}
+                                        <i class="bi bi-arrow-bar-down"></i> {{ t('wick_down') }}
+                                        {% elif direction == 'wick_both' %}
+                                        <i class="bi bi-arrows-expand"></i> {{ t('wick_both') }}
+                                        {% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <button type="submit" class="btn btn-success w-100">
+                                <i class="bi bi-plus-lg me-2"></i>{{ t('add') }}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- Test proxy connection card -->
+                <div class="card bg-dark border-warning mb-4">
+                    <div class="card-header bg-warning bg-gradient text-dark">
+                        <h5 class="mb-0">
+                            <i class="bi bi-wifi me-2"></i>{{ t('test_proxy') }}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">{{ t('check_config_proxy') }}</p>
+                        <button type="button" id="testProxyBtn" class="btn btn-warning w-100">
+                            <i class="bi bi-wifi me-1"></i>{{ t('test_proxy') }}
+                        </button>
+                        <div id="proxyTestResult" class="mt-3 small" style="display:none;">
+                            <!-- Proxy test results will be shown here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Table section -->
+            <div class="col-lg-7">
+                <!-- Statistics card -->
+                <div class="card bg-dark border-info mb-4">
+                    <div class="card-header bg-info bg-gradient text-dark">
+                        <h5 class="mb-0">
+                            <i class="bi bi-info-circle me-2"></i>{{ t('statistics') }}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="stat-card">
+                                    <div class="stat-value text-primary" id="totalLevels">{{ levels|length }}</div>
+                                    <div class="stat-label">{{ t('total_levels') }}</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="stat-card">
+                                    <div class="stat-value text-success" id="upLevels">
+                                        {{ levels|selectattr('direction', 'equalto', 'up')|list|length }}
+                                    </div>
+                                    <div class="stat-label">{{ t('up_levels') }}</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="stat-card">
+                                    <div class="stat-value text-danger" id="downLevels">
+                                        {{ levels|selectattr('direction', 'equalto', 'down')|list|length }}
+                                    </div>
+                                    <div class="stat-label">{{ t('down_levels') }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card bg-dark border-secondary mb-4">
+                    <div class="card-header bg-secondary bg-gradient">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="bi bi-table me-2"></i>{{ t('existing_levels') }}
+                            </h5>
+                            <div class="input-group" style="width: 250px;">
+                                <span class="input-group-text bg-dark text-light border-secondary">
+                                    <i class="bi bi-filter"></i>
+                                </span>
+                                <input type="text" class="form-control bg-dark text-light border-secondary" 
+                                       id="filterPairInput" placeholder="{{ t('filter_pairs') }}" autocomplete="off">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover table-bordered mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>{{ t('id') }}</th>
+                                        <th>{{ t('trading_pair') }}</th>
+                                        <th>{{ t('price_level') }}</th>
+                                        <th>{{ t('direction') }}</th>
+                                        <th class="text-center">{{ t('actions') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="levelsTableBody">
+                                    {% for level in levels %}
+                                    <tr data-pair="{{ level.pair }}">
+                                        <td>{{ level.id }}</td>
+                                        <td>
+                                            <span class="badge bg-dark text-light border border-light pair-badge" data-pair="{{ level.pair }}">
+                                                {{ level.pair }}
+                                            </span>
+                                        </td>
+                                        <td class="text-info fw-bold">{{ level.level }}</td>
+                                        <td>
+                                            {% if level.direction == 'up' %}
+                                            <span class="badge bg-success">
+                                                <i class="bi bi-arrow-up me-1"></i>
+                                                {% if lang == 'en' %}Up{% else %}上穿{% endif %}
+                                            </span>
+                                            {% elif level.direction == 'down' %}
+                                            <span class="badge bg-danger">
+                                                <i class="bi bi-arrow-down me-1"></i>
+                                                {% if lang == 'en' %}Down{% else %}下穿{% endif %}
+                                            </span>
+                                            {% elif level.direction == 'both' %}
+                                            <span class="badge bg-primary">
+                                                <i class="bi bi-arrow-down-up me-1"></i>
+                                                {% if lang == 'en' %}Both{% else %}双向{% endif %}
+                                            </span>
+                                            {% elif level.direction == 'wick_up' %}
+                                            <span class="badge bg-warning">
+                                                <i class="bi bi-arrow-bar-up me-1"></i>
+                                                {% if lang == 'en' %}Wick Up{% else %}上影线流动性清扫{% endif %}
+                                            </span>
+                                            {% elif level.direction == 'wick_down' %}
+                                            <span class="badge bg-info">
+                                                <i class="bi bi-arrow-bar-down me-1"></i>
+                                                {% if lang == 'en' %}Wick Down{% else %}下影线流动性清扫{% endif %}
+                                            </span>
+                                            {% elif level.direction == 'wick_both' %}
+                                            <span class="badge bg-secondary">
+                                                <i class="bi bi-arrows-expand me-1"></i>
+                                                {% if lang == 'en' %}Bidirectional Liquidity Sweep{% else %}双向流动性清扫{% endif %}
+                                            </span>
+                                            {% endif %}
+                                        </td>
+
+                                        <td class="text-center">
+                                            <div class="btn-group" role="group">
+                                                <button class="btn btn-sm btn-outline-primary edit-btn me-2" data-id="{{ level.id }}" 
+                                                        data-pair="{{ level.pair }}" data-level="{{ level.level }}" 
+                                                        data-direction="{{ level.direction }}" data-confirm-close="{{ level.confirm_close|int }}">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger delete-btn" data-id="{{ level.id }}">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Check inactive pairs card -->
+                <div class="card bg-dark border-warning">
+                    <div class="card-header bg-warning bg-gradient text-dark">
+                        <h5 class="mb-0">
+                            <i class="bi bi-exclamation-triangle me-2"></i>{{ t('check_inactive_pairs') }}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <button id="checkInactivePairsBtn" class="btn btn-warning w-100 mb-3">
+                            <i class="bi bi-check-circle me-2"></i>{{ t('check_inactive_pairs') }}
+                        </button>
+                        <div id="inactivePairsResult" class="mt-2 small" style="display:none;">
+                            <!-- Results will be displayed here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-4 text-center text-muted">
+            <p>{{ t('footer') }} &copy; {{ now.year }}</p>
+        </footer>
+    </div>
+
+    <!-- Notification toast -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="notificationToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto" id="toastTitle">{{ t('notification') }}</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toastMessage"></div>
+        </div>
+    </div>
+    
+    <!-- Edit Level Modal -->
+    <div class="modal fade" id="editLevelModal" tabindex="-1" aria-labelledby="editLevelModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header bg-primary">
+                    <h5 class="modal-title" id="editLevelModalLabel">{{ t('edit_level') }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editLevelForm">
+                        <input type="hidden" id="editLevelId">
+                        <div class="mb-3">
+                            <label for="editPair" class="form-label">{{ t('trading_pair') }}</label>
+                            <input type="text" class="form-control bg-dark text-light border-secondary" id="editPair" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editLevel" class="form-label">{{ t('price_level') }}</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light border-secondary" id="editLevel" step="any" required>
+                                <button type="button" class="btn btn-outline-primary" id="fetchCurrentPriceBtn">
+                                    <i class="bi bi-arrow-repeat me-1"></i>{{ t('get_current_price') }}
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editDirection" class="form-label">{{ t('direction') }}</label>
+                            <select class="form-select bg-dark text-light border-secondary" id="editDirection" required>
+                                {% for direction in directions %}
+                                <option value="{{ direction }}">
+                                    {% if direction == 'up' %}
+                                    <i class="bi bi-arrow-up"></i> {{ t('up') }}
+                                    {% elif direction == 'down' %}
+                                    <i class="bi bi-arrow-down"></i> {{ t('down') }}
+                                    {% elif direction == 'both' %}
+                                    <i class="bi bi-arrow-down-up"></i> {{ t('both') }}
+                                    {% elif direction == 'wick_up' %}
+                                    <i class="bi bi-arrow-bar-up"></i> {{ t('wick_up') }}
+                                    {% elif direction == 'wick_down' %}
+                                    <i class="bi bi-arrow-bar-down"></i> {{ t('wick_down') }}
+                                    {% elif direction == 'wick_both' %}
+                                    <i class="bi bi-arrows-expand"></i> {{ t('wick_both') }}
+                                    {% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ t('cancel') }}</button>
+                    <button type="button" class="btn btn-primary" id="saveEditBtn">{{ t('save') }}</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Language-specific messages
+            const translations = {
+                'en': {
+                    'success': 'Success',
+                    'error': 'Error',
+                    'added_level': 'Added price level {0} for {1}',
+                    'add_failed': 'Add failed: {0}',
+                    'deleted_level': 'Deleted price level',
+                    'delete_failed': 'Delete failed: {0}',
+                    'confirm_delete': 'Are you sure you want to delete this level?',
+                    'loading_price': 'Loading price...',
+                    'price_fetch_failed': 'Failed to fetch price',
+                    'current_price_loaded': 'Current price loaded',
+                    'is required': 'is required',
+                    'updated_level': 'Updated price level for {0}',
+                    'update_failed': 'Update failed: {0}'
+                },
+                'zh': {
+                    'success': '成功',
+                    'error': '错误',
+                    'added_level': '已添加 {1} 的价格点位 {0}',
+                    'add_failed': '添加失败: {0}',
+                    'deleted_level': '已删除价格点位',
+                    'delete_failed': '删除失败: {0}',
+                    'confirm_delete': '确定要删除此监控点位吗?',
+                    'loading_price': '正在获取价格...',
+                    'price_fetch_failed': '获取价格失败',
+                    'current_price_loaded': '当前价格已加载',
+                    'is required': '是必填项',
+                    'updated_level': '已更新 {0} 的价格点位',
+                    'update_failed': '更新失败: {0}'
+                }
+            };
+            
+            // Get current language
+            const currentLang = '{{ lang }}';
+            
+            // Translation function
+            function t(key, ...args) {
+                let text = translations[currentLang][key] || key;
+                for (let i = 0; i < args.length; i++) {
+                    text = text.replace(`{${i}}`, args[i]);
+                }
+                return text;
+            }
+            
+            // Toast notification function
+            function showNotification(title, message, type = 'success') {
+                const toast = document.getElementById('notificationToast');
+                const toastTitle = document.getElementById('toastTitle');
+                const toastMessage = document.getElementById('toastMessage');
+                
+                toastTitle.textContent = title;
+                toastMessage.textContent = message;
+                
+                // Set toast class based on type
+                toast.className = 'toast';
+                if (type === 'success') {
+                    toast.classList.add('bg-success', 'text-white');
+                } else if (type === 'error') {
+                    toast.classList.add('bg-danger', 'text-white');
+                } else if (type === 'warning') {
+                    toast.classList.add('bg-warning', 'text-dark');
+                } else {
+                    toast.classList.add('bg-dark', 'text-light');
+                }
+                
+                const bsToast = new bootstrap.Toast(toast);
+                bsToast.show();
+            }
+        
+            // Add level form submission
+            document.getElementById('addLevelForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const pair = document.getElementById('pair').value;
+                const level = document.getElementById('level').value;
+                const direction = document.getElementById('direction').value;
+                
+                fetch('/api/levels', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        pair: pair,
+                        level: parseFloat(level),
+                        direction: direction,
+                        confirm_close: false
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showNotification(t('success'), t('added_level', level, pair), 'success');
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        showNotification(t('error'), t('add_failed', data.error), 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showNotification(t('error'), t('add_failed', error), 'error');
+                });
+            });
+            
+            // 当选择交易对时，自动获取当前价格
+            document.getElementById('pair').addEventListener('change', function() {
+                const pair = this.value;
+                const levelInput = document.getElementById('level');
+                
+                // 如果没有选择交易对，直接返回
+                if (!pair) return;
+                
+                // 清空输入框并显示加载状态
+                levelInput.value = '';
+                levelInput.setAttribute('placeholder', t('loading_price'));
+                
+                // 创建加载指示器
+                let loadingIndicator = document.getElementById('priceLoadingIndicator');
+                if (!loadingIndicator) {
+                    loadingIndicator = document.createElement('div');
+                    loadingIndicator.id = 'priceLoadingIndicator';
+                    loadingIndicator.className = 'spinner-border spinner-border-sm text-primary ms-2';
+                    loadingIndicator.setAttribute('role', 'status');
+                    loadingIndicator.innerHTML = '<span class="visually-hidden">Loading...</span>';
+                    document.querySelector('label[for="level"]').appendChild(loadingIndicator);
+                } else {
+                    loadingIndicator.style.display = '';
+                }
+                
+                // 获取价格
+                fetch(`/api/current_price/${encodeURIComponent(pair)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        // 隐藏加载指示器
+                        if (loadingIndicator) {
+                            loadingIndicator.style.display = 'none';
+                        }
+                        
+                        if (data.success && data.price) {
+                            // 设置价格到输入框
+                            levelInput.value = data.price;
+                            levelInput.setAttribute('placeholder', '');
+                            showNotification(t('success'), t('current_price_loaded'), 'success');
+                        } else {
+                            // 显示错误
+                            console.error('获取价格失败:', data.error);
+                            levelInput.setAttribute('placeholder', t('price_fetch_failed'));
+                            showNotification(t('error'), t('price_fetch_failed') + ': ' + (data.error || '未知错误'), 'error');
+                        }
+                    })
+                    .catch(error => {
+                        // 隐藏加载指示器
+                        if (loadingIndicator) {
+                            loadingIndicator.style.display = 'none';
+                        }
+                        
+                        console.error('获取价格出错:', error);
+                        levelInput.setAttribute('placeholder', t('price_fetch_failed'));
+                        showNotification(t('error'), t('price_fetch_failed') + ': ' + error, 'error');
+                    });
+            });
+            
+            // Edit level buttons
+            document.querySelectorAll('.edit-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const levelId = this.getAttribute('data-id');
+                    const pair = this.getAttribute('data-pair');
+                    const level = this.getAttribute('data-level');
+                    const direction = this.getAttribute('data-direction');
+                    
+                    // Set values in modal form
+                    document.getElementById('editLevelId').value = levelId;
+                    document.getElementById('editPair').value = pair;
+                    document.getElementById('editLevel').value = level;
+                    document.getElementById('editDirection').value = direction;
+                    
+                    // Show modal
+                    const editModal = new bootstrap.Modal(document.getElementById('editLevelModal'));
+                    editModal.show();
+                });
+            });
+            
+            // Fetch current price button in edit modal
+            document.getElementById('fetchCurrentPriceBtn').addEventListener('click', function() {
+                const pair = document.getElementById('editPair').value;
+                const levelInput = document.getElementById('editLevel');
+                
+                // If no pair selected, show error and return
+                if (!pair) {
+                    showNotification(t('error'), t('trading_pair') + ' ' + t('is required'), 'error');
+                    return;
+                }
+                
+                // Clear input and show loading state
+                levelInput.setAttribute('placeholder', t('loading_price'));
+                
+                // Create loading indicator
+                let loadingIndicator = document.createElement('span');
+                loadingIndicator.className = 'spinner-border spinner-border-sm text-primary ms-2';
+                loadingIndicator.setAttribute('role', 'status');
+                this.innerHTML = `<i class="bi bi-arrow-repeat me-1"></i>${t('loading_price')}`;
+                this.disabled = true;
+                
+                // Fetch current price
+                fetch(`/api/current_price/${encodeURIComponent(pair)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.price) {
+                            // Set price to input field
+                            levelInput.value = data.price;
+                            levelInput.setAttribute('placeholder', '');
+                            showNotification(t('success'), t('current_price_loaded'), 'success');
+                        } else {
+                            // Show error
+                            console.error('Failed to fetch price:', data.error);
+                            levelInput.setAttribute('placeholder', t('price_fetch_failed'));
+                            showNotification(t('error'), t('price_fetch_failed') + ': ' + (data.error || ''), 'error');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching price:', error);
+                        levelInput.setAttribute('placeholder', t('price_fetch_failed'));
+                        showNotification(t('error'), t('price_fetch_failed') + ': ' + error, 'error');
+                    })
+                    .finally(() => {
+                        // Restore button text and enable it
+                        this.innerHTML = `<i class="bi bi-arrow-repeat me-1"></i>${t('get_current_price')}`;
+                        this.disabled = false;
+                    });
+            });
+            
+            // Save edit button
+            document.getElementById('saveEditBtn').addEventListener('click', function() {
+                const levelId = document.getElementById('editLevelId').value;
+                const pair = document.getElementById('editPair').value;
+                const level = document.getElementById('editLevel').value;
+                const direction = document.getElementById('editDirection').value;
+                
+                // Validate input
+                if (!level) {
+                    showNotification(t('error'), t('price_level') + ' ' + t('is required'), 'error');
+                    return;
+                }
+                
+                // Send update request
+                fetch(`/api/levels/${levelId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        level: parseFloat(level),
+                        direction: direction,
+                        confirm_close: false
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showNotification(t('success'), t('updated_level', pair), 'success');
+                        
+                        // Close modal
+                        const editModal = bootstrap.Modal.getInstance(document.getElementById('editLevelModal'));
+                        editModal.hide();
+                        
+                        // Reload page to show updated data
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        showNotification(t('error'), t('update_failed', data.error), 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showNotification(t('error'), t('update_failed', error), 'error');
+                });
+            });
+            
+            // Delete level buttons
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const levelId = this.getAttribute('data-id');
+                    if (confirm(t('confirm_delete'))) {
+                        fetch(`/api/levels/${levelId}`, {
+                            method: 'DELETE',
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                showNotification(t('success'), t('deleted_level'), 'success');
+                                setTimeout(() => window.location.reload(), 1000);
+                            } else {
+                                showNotification(t('error'), t('delete_failed', data.error), 'error');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            showNotification(t('error'), t('delete_failed', error), 'error');
+                        });
+                    }
+                });
+            });
+            
+            // Filter table by pair
+            document.getElementById('filterPairInput').addEventListener('input', function() {
+                const filterText = this.value.toLowerCase();
+                const rows = document.querySelectorAll('#levelsTableBody tr');
+                
+                rows.forEach(row => {
+                    const pair = row.getAttribute('data-pair').toLowerCase();
+                    if (pair.includes(filterText)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+            
+            // Filter dropdown options by search text
+            document.getElementById('pairSearch').addEventListener('input', function() {
+                const searchText = this.value.toLowerCase();
+                const pairSelect = document.getElementById('pair');
+                const options = pairSelect.querySelectorAll('option');
+                
+                let visibleCount = 0;
+                
+                options.forEach(option => {
+                    // Skip the first placeholder option
+                    if (option.value === '') return;
+                    
+                    const pairText = option.textContent.toLowerCase();
+                    if (pairText.includes(searchText)) {
+                        option.style.display = '';
+                        visibleCount++;
+                    } else {
+                        option.style.display = 'none';
+                    }
+                });
+                
+                // Automatically select the only visible option if there's exactly one match
+                if (visibleCount === 1 && searchText.length > 2) {
+                    options.forEach(option => {
+                        if (option.style.display !== 'none' && option.value !== '') {
+                            pairSelect.value = option.value;
+                            // 触发change事件，自动获取价格
+                            const event = new Event('change');
+                            pairSelect.dispatchEvent(event);
+                        }
+                    });
+                }
+            });
+            
+            // Load all pairs from exchange
+            function loadAllPairs(usdt_only = false, spot_only = false) {
+                const loadingElement = document.getElementById('loadingPairs');
+                const pairCountElement = document.getElementById('pairCount');
+                const pairSelect = document.getElementById('pair');
+                const pairSearch = document.getElementById('pairSearch');
+                const pairsAlert = document.getElementById('pairsAlert');
+                
+                // Show loading indicator
+                loadingElement.style.display = '';
+                
+                // Hide any previous alerts
+                pairsAlert.style.display = 'none';
+                pairsAlert.innerHTML = '';
+                
+                // Build query parameters
+                const params = new URLSearchParams();
+                if (usdt_only) params.append('usdt_only', 'true');
+                if (spot_only) params.append('spot_only', 'true');
+                
+                // Clear search input
+                pairSearch.value = '';
+                
+                // Disable form elements during loading
+                pairSelect.disabled = true;
+                pairSearch.disabled = true;
+                
+                fetch(`/api/all_pairs?${params.toString()}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const pairs = data.pairs;
+                            const currentValue = pairSelect.value;
+                            
+                            console.log(`Received ${pairs.length} pairs from server`);
+                            
+                            // Clear existing options (except the first one)
+                            while (pairSelect.options.length > 1) {
+                                pairSelect.remove(1);
+                            }
+                            
+                            // Check for proxy error indicator
+                            const proxyErrorIndex = pairs.indexOf("ERROR_PROXY_CONNECTION");
+                            if (proxyErrorIndex !== -1) {
+                                // Remove the error indicator from the array
+                                pairs.splice(proxyErrorIndex, 1);
+                                
+                                // Show proxy error message
+                                pairsAlert.innerHTML = `
+                                    <div class="alert alert-danger">
+                                        <i class="bi bi-wifi-off me-2"></i>
+                                        ${t('proxy_error')}
+                                        <hr>
+                                        <small class="d-block mt-2">
+                                            <i class="bi bi-info-circle me-1"></i>
+                                            ${t('check_config_proxy')}
+                                        </small>
+                                    </div>
+                                `;
+                                pairsAlert.style.display = 'block';
+                                
+                                // Show error notification
+                                showNotification(t('error'), t('proxy_error'), 'error');
+                            }
+                            
+                            if (pairs.length === 0) {
+                                // No pairs returned
+                                pairsAlert.innerHTML = `
+                                    <div class="alert alert-warning">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        ${t('no_pairs_found')}
+                                    </div>
+                                `;
+                                pairsAlert.style.display = 'block';
+                                
+                                // Update pair count for empty results
+                                pairCountElement.innerHTML = `<i class="bi bi-info-circle me-1"></i>${t('total_pairs', 0)}`;
+                                
+                                // Show warning notification
+                                showNotification(t('warning'), t('no_pairs_found'), 'warning');
+                            } else {
+                                // Add all pairs
+                                pairs.forEach(pair => {
+                                    const option = document.createElement('option');
+                                    option.value = pair;
+                                    option.textContent = pair;
+                                    pairSelect.appendChild(option);
+                                });
+                                
+                                // Restore selected value if it exists
+                                if (currentValue && pairs.includes(currentValue)) {
+                                    pairSelect.value = currentValue;
+                                } else {
+                                    pairSelect.selectedIndex = 0; // Select the first option
+                                }
+                                
+                                // Update pair count
+                                pairCountElement.innerHTML = `<i class="bi bi-info-circle me-1"></i>${t('total_pairs', pairs.length)}`;
+                                
+                                // Show success message
+                                showNotification(t('success'), t('pairs_loaded', pairs.length), 'success');
+                            }
+                        } else {
+                            console.error('Error loading pairs:', data.error);
+                            
+                            // Show error in alert
+                            pairsAlert.innerHTML = `
+                                <div class="alert alert-danger">
+                                    <i class="bi bi-x-circle me-2"></i>
+                                    ${t('error')}: ${data.error}
+                                </div>
+                            `;
+                            pairsAlert.style.display = 'block';
+                            
+                            showNotification(t('error'), data.error, 'error');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        
+                        // Show error in alert
+                        pairsAlert.innerHTML = `
+                            <div class="alert alert-danger">
+                                <i class="bi bi-x-circle me-2"></i>
+                                ${t('error')}: ${error.toString()}
+                            </div>
+                        `;
+                        pairsAlert.style.display = 'block';
+                        
+                        showNotification(t('error'), error.toString(), 'error');
+                    })
+                    .finally(() => {
+                        // Hide loading indicator
+                        loadingElement.style.display = 'none';
+                        
+                        // Re-enable form elements
+                        pairSelect.disabled = false;
+                        pairSearch.disabled = false;
+                    });
+            }
+            
+            // Check inactive pairs
+            function checkInactivePairs() {
+                const resultElement = document.getElementById('inactivePairsResult');
+                
+                // Show loading message
+                resultElement.innerHTML = `<div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm text-warning me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span>${t('checking_pairs')}</span>
+                </div>`;
+                resultElement.style.display = '';
+                
+                fetch('/api/check_inactive_pairs')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const pairsStatus = data.pairs_status;
+                            const inactivePairs = Object.entries(pairsStatus).filter(([_, active]) => !active).map(([pair]) => pair);
+                            
+                            // Update pair badges in the table
+                            document.querySelectorAll('.pair-badge').forEach(badge => {
+                                const pair = badge.getAttribute('data-pair');
+                                if (pair in pairsStatus) {
+                                    if (!pairsStatus[pair]) {
+                                        // Inactive pair
+                                        badge.classList.remove('bg-dark');
+                                        badge.classList.add('bg-danger');
+                                        badge.setAttribute('title', t('inactive_pair'));
+                                        
+                                        // Add warning icon
+                                        if (!badge.querySelector('.bi-exclamation-triangle-fill')) {
+                                            badge.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i>${badge.innerHTML}`;
+                                        }
+                                    } else {
+                                        // Active pair
+                                        badge.classList.remove('bg-danger');
+                                        badge.classList.add('bg-dark');
+                                        badge.removeAttribute('title');
+                                    }
+                                }
+                            });
+                            
+                            if (inactivePairs.length > 0) {
+                                // Display inactive pairs
+                                let html = `<div class="alert alert-warning">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    <strong>${t('inactive_pairs_found', inactivePairs.length)}</strong>
+                                </div>
+                                <ul class="list-group list-group-flush bg-dark">`;
+                                
+                                Object.entries(pairsStatus).forEach(([pair, active]) => {
+                                    const badgeClass = active ? 'bg-success' : 'bg-danger';
+                                    const status = active ? t('active_pair') : t('inactive_pair');
+                                    html += `<li class="list-group-item bg-dark text-light d-flex justify-content-between align-items-center">
+                                        ${pair}
+                                        <span class="badge ${badgeClass}">${status}</span>
+                                    </li>`;
+                                });
+                                
+                                html += '</ul>';
+                                resultElement.innerHTML = html;
+                            } else {
+                                // All pairs are active
+                                resultElement.innerHTML = `<div class="alert alert-success">
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    <strong>${t('all_pairs_active')}</strong>
+                                </div>`;
+                            }
+                        } else {
+                            console.error('Error checking inactive pairs:', data.error);
+                            resultElement.innerHTML = `<div class="alert alert-danger">
+                                <i class="bi bi-x-circle me-2"></i>
+                                <strong>${t('error')}: ${data.error}</strong>
+                            </div>`;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        resultElement.innerHTML = `<div class="alert alert-danger">
+                            <i class="bi bi-x-circle me-2"></i>
+                            <strong>${t('error')}: ${error}</strong>
+                        </div>`;
+                    });
+            }
+            
+            // Event listeners for buttons
+            document.getElementById('refreshPairsBtn').addEventListener('click', function() {
+                loadAllPairs(false, false);
+            });
+            
+            document.getElementById('refreshBinanceUsdtSpotBtn').addEventListener('click', function() {
+                loadAllPairs(true, true);
+            });
+            
+            document.getElementById('checkInactivePairsBtn').addEventListener('click', function() {
+                checkInactivePairs();
+            });
+            
+            // 测试代理连接
+            document.getElementById('testProxyBtn').addEventListener('click', function() {
+                testProxyConnection();
+            });
+            
+            // 测试代理连接功能
+            function testProxyConnection() {
+                // 显示测试中的提示
+                const proxyTestResult = document.getElementById('proxyTestResult');
+                proxyTestResult.innerHTML = `
+                    <div class="alert alert-info">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span>${t('testing_proxy')}</span>
+                        </div>
+                    </div>
+                `;
+                proxyTestResult.style.display = 'block';
+                
+                // 禁用测试按钮
+                document.getElementById('testProxyBtn').disabled = true;
+                
+                // 发送请求测试代理
+                fetch('/api/test_proxy')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const results = data.results;
+                            const tests = results.tests;
+                            const allTestsPassed = data.all_tests_passed;
+                            
+                            // 构建结果HTML
+                            let resultHtml = `
+                                <div class="card mb-3">
+                                    <div class="card-header ${allTestsPassed ? 'bg-success' : 'bg-warning'} text-white">
+                                        <h5 class="mb-0">
+                                            <i class="bi ${allTestsPassed ? 'bi-check-circle' : 'bi-exclamation-triangle'} me-2"></i>
+                                            ${t('proxy_test_results')}
+                                        </h5>
+                                    </div>
+                                    <div class="card-body bg-dark">
+                                        <div class="alert ${allTestsPassed ? 'alert-success' : tests.some(t => t.success) ? 'alert-warning' : 'alert-danger'}">
+                                            ${allTestsPassed 
+                                                ? t('proxy_test_success') 
+                                                : tests.some(t => t.success) 
+                                                    ? t('proxy_test_partial') 
+                                                    : t('proxy_test_failed')
+                                            }
+                                        </div>
+                                        
+                                        <div class="mt-3">
+                                            <h6 class="text-muted">Proxy Configuration:</h6>
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <h6 class="text-muted mb-2">CCXT Config:</h6>
+                                                    <pre class="bg-dark text-light p-2 border">${JSON.stringify(results.ccxt_config || {}, null, 2)}</pre>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <h6 class="text-muted mb-2">Proxy URLs:</h6>
+                                                    <pre class="bg-dark text-light p-2 border">${JSON.stringify(results.proxy_urls || {}, null, 2)}</pre>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="mt-3">
+                                            <h6 class="text-muted">Test Results:</h6>
+                                            <div class="list-group bg-dark">
+            `;
+                            
+                            // 添加每个测试的结果
+                            tests.forEach(test => {
+                                const statusClass = test.success ? 'bg-success' : 'bg-danger';
+                                const statusIcon = test.success ? 'bi-check-circle' : 'bi-x-circle';
+                                
+                                resultHtml += `
+                                    <div class="list-group-item bg-dark text-light border-secondary">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-1">${test.type}</h6>
+                                                ${test.proxy ? `<small class="text-muted d-block">Proxy: ${test.proxy}</small>` : ''}
+                                                ${test.time ? `<small class="text-muted d-block">Time: ${test.time}</small>` : ''}
+                                                ${test.ip ? `<small class="text-success d-block">IP: ${test.ip}</small>` : ''}
+                                                ${test.error ? `<small class="text-danger d-block">Error: ${test.error}</small>` : ''}
+                                            </div>
+                                            <span class="badge ${statusClass}">
+                                                <i class="bi ${statusIcon}"></i>
+                                            </span>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                            
+                            resultHtml += `
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                            
+                            // 显示结果
+                            proxyTestResult.innerHTML = resultHtml;
+                            
+                            // 显示通知
+                            if (allTestsPassed) {
+                                showNotification(t('success'), t('proxy_test_success'), 'success');
+                            } else if (tests.some(t => t.success)) {
+                                showNotification(t('warning'), t('proxy_test_partial'), 'warning');
+                            } else {
+                                showNotification(t('error'), t('proxy_test_failed'), 'error');
+                            }
+                        } else {
+                            // 显示错误
+                            proxyTestResult.innerHTML = `
+                                <div class="alert alert-danger">
+                                    <i class="bi bi-x-circle me-2"></i>
+                                    ${t('error')}: ${data.error}
+                                </div>
+                            `;
+                            
+                            showNotification(t('error'), data.error, 'error');
+                        }
+                    })
+                    .catch(error => {
+                        // 显示错误
+                        proxyTestResult.innerHTML = `
+                            <div class="alert alert-danger">
+                                <i class="bi bi-x-circle me-2"></i>
+                                ${t('error')}: ${error.toString()}
+                            </div>
+                        `;
+                        
+                        showNotification(t('error'), error.toString(), 'error');
+                    })
+                    .finally(() => {
+                        // 重新启用测试按钮
+                        document.getElementById('testProxyBtn').disabled = false;
+                    });
+            }
+            
+            // Load all pairs when the page loads with a slight delay to ensure UI is ready
+            setTimeout(() => {
+                // First load with default parameters
+                loadAllPairs(false, false);
+            }, 500);
+        });
+    </script>
+</body>
+</html>
+    

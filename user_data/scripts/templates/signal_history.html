@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('signal_history_title') }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* Auto-refresh animation for new signals */
+        @keyframes highlightNew {
+            0% { background-color: rgba(25, 135, 84, 0.3); }
+            100% { background-color: transparent; }
+        }
+        
+        .new-signal {
+            animation: highlightNew 5s ease-out;
+        }
+        
+        /* Status indicator for auto-refresh */
+        .auto-refresh-indicator {
+            display: inline-flex;
+            align-items: center;
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        
+        .auto-refresh-indicator .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .auto-refresh-indicator .status-dot.active {
+            background-color: #198754;
+            box-shadow: 0 0 5px #198754;
+            animation: pulse 2s infinite;
+        }
+        
+        .auto-refresh-indicator .status-dot.inactive {
+            background-color: #dc3545;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-dark text-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-black mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-graph-up-arrow text-success me-2"></i>
+                ATRLevelSignal
+            </a>
+            <span class="badge bg-info ms-2">{{ t('signal_history') }}</span>
+            
+            <!-- Navigation links -->
+            <div class="collapse navbar-collapse ms-3" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">
+                            <i class="bi bi-layers me-1"></i>{{ t('manage_levels') }}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/signal_history">
+                            <i class="bi bi-clock-history me-1"></i>{{ t('signal_history') }}
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Language switcher -->
+            <div class="ms-auto">
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" id="languageDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        {% if lang == 'en' %}
+                        <i class="bi bi-globe me-1"></i> English
+                        {% else %}
+                        <i class="bi bi-globe me-1"></i> 中文
+                        {% endif %}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" aria-labelledby="languageDropdown">
+                        <li><a class="dropdown-item {% if lang == 'en' %}active{% endif %}" href="/set_language/en">English</a></li>
+                        <li><a class="dropdown-item {% if lang == 'zh' %}active{% endif %}" href="/set_language/zh">中文</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Mobile toggler -->
+            <button class="navbar-toggler ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row">
+            <!-- Filter section -->
+            <div class="col-lg-3">
+                <div class="card bg-dark border-info mb-4">
+                    <div class="card-header bg-info bg-gradient text-dark">
+                        <h5 class="mb-0">
+                            <i class="bi bi-filter-circle me-2"></i>{{ t('filter_signals') }}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="filterForm">
+                            <div class="mb-3">
+                                <label for="pairFilter" class="form-label">
+                                    <i class="bi bi-currency-exchange me-1"></i>{{ t('pair') }}
+                                </label>
+                                <select class="form-select bg-dark text-light border-secondary" id="pairFilter">
+                                    <option value="">{{ t('all_signal_types') }}</option>
+                                    {% for pair in pairs %}
+                                    <option value="{{ pair }}">{{ pair }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="signalTypeFilter" class="form-label">
+                                    <i class="bi bi-lightning me-1"></i>{{ t('signal_type') }}
+                                </label>
+                                <select class="form-select bg-dark text-light border-secondary" id="signalTypeFilter">
+                                    <option value="">{{ t('all_signal_types') }}</option>
+                                    <option value="level_cross_up">{{ t('level_cross_up') }}</option>
+                                    <option value="level_cross_down">{{ t('level_cross_down') }}</option>
+                                    <option value="level_wick_up">{{ t('level_wick_up') }}</option>
+                                    <option value="level_wick_down">{{ t('level_wick_down') }}</option>
+                                    <option value="atr_surge">{{ t('atr_surge') }}</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="startDate" class="form-label">
+                                    <i class="bi bi-calendar-event me-1"></i>{{ t('start_date') }}
+                                </label>
+                                <input type="text" class="form-control bg-dark text-light border-secondary" id="startDate" placeholder="YYYY-MM-DD">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="endDate" class="form-label">
+                                    <i class="bi bi-calendar-event me-1"></i>{{ t('end_date') }}
+                                </label>
+                                <input type="text" class="form-control bg-dark text-light border-secondary" id="endDate" placeholder="YYYY-MM-DD">
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-funnel me-2"></i>{{ t('apply_filters') }}
+                                </button>
+                                <button type="button" id="resetFilters" class="btn btn-outline-secondary">
+                                    <i class="bi bi-arrow-counterclockwise me-2"></i>{{ t('reset_filters') }}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- Statistics Card -->
+                <div class="card bg-dark border-success">
+                    <div class="card-header bg-success bg-gradient text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-bar-chart me-2"></i>{{ t('statistics') }}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3 text-center">
+                            <div class="fs-2 fw-bold" id="totalSignalsCount">{{ signals|length }}</div>
+                            <div class="text-muted">{{ t('total_signals', signals|length) }}</div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="button" id="exportCsv" class="btn btn-outline-info">
+                                <i class="bi bi-file-earmark-spreadsheet me-2"></i>{{ t('export_csv') }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Signals table section -->
+            <div class="col-lg-9">
+                <div class="card bg-dark border-secondary">
+                    <div class="card-header bg-secondary bg-gradient">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="bi bi-list-ul me-2"></i>{{ t('signal_history') }}
+                                <div class="auto-refresh-indicator ms-2" id="autoRefreshIndicator">
+                                    <span class="status-dot active"></span>
+                                    <span class="status-text">{{ t('auto_refresh_active') }}</span>
+                                </div>
+                            </h5>
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-light me-2" role="status" id="loadingSpinner" style="display: none;">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-secondary" id="toggleAutoRefreshBtn">
+                                    <i class="bi bi-arrow-repeat me-1"></i>
+                                    <span id="autoRefreshBtnText">{{ t('disable_auto_refresh') }}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover table-bordered mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>{{ t('signal_time') }}</th>
+                                        <th>{{ t('trading_pair') }}</th>
+                                        <th>{{ t('signal_type') }}</th>
+                                        <th>{{ t('prev_price') }}</th>
+                                        <th>{{ t('current_price') }}</th>
+                                        <th>{{ t('price_change_pct') }}</th>
+                                        <th>{{ t('level_info') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="signalsTableBody">
+                                    {% for signal in signals %}
+                                    <tr>
+                                        <td>{{ signal.created_at }}</td>
+                                        <td>
+                                            <span class="badge bg-dark text-light border border-light">
+                                                {{ signal.pair }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {% if signal.signal_type == 'level_cross_up' %}
+                                            <span class="badge bg-success">
+                                                <i class="bi bi-arrow-up me-1"></i>{{ t('level_cross_up') }}
+                                            </span>
+                                            {% elif signal.signal_type == 'level_cross_down' %}
+                                            <span class="badge bg-danger">
+                                                <i class="bi bi-arrow-down me-1"></i>{{ t('level_cross_down') }}
+                                            </span>
+                                            {% else %}
+                                            <span class="badge bg-warning text-dark">
+                                                <i class="bi bi-lightning me-1"></i>{{ t('atr_surge') }}
+                                            </span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-muted">{{ signal.prev_price }}</td>
+                                        <td class="text-info">{{ signal.current_price }}</td>
+                                        <td>
+                                            {% set change_pct = ((signal.current_price - signal.prev_price) / signal.prev_price * 100)|round(2) %}
+                                            <span class="badge {% if change_pct > 0 %}bg-success{% elif change_pct < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
+                                                {{ change_pct }}%
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {% if signal.level_price %}
+                                            <span class="badge bg-primary">
+                                                {{ signal.level_price }} {% if signal.level_id %}(ID: {{ signal.level_id }}){% endif %}
+                                            </span>
+                                            {% elif signal.atr_value %}
+                                            <span class="badge bg-info text-dark">
+                                                ATR: {{ signal.atr_value }}
+                                            </span>
+                                            {% else %}
+                                            <span class="badge bg-secondary">-</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- 分页控件 - 重新设计的版本 -->
+                        <div class="pagination-container bg-dark p-3 border-top border-secondary">
+                            <div class="row align-items-center">
+                                <div class="col-12">
+                                    <div class="d-flex justify-content-center align-items-center flex-wrap gap-3">
+                                        <!-- 每页显示数量选择器 -->
+                                        <div class="d-flex align-items-center">
+                                            <label for="perPageSelect" class="text-muted me-2">{{ t('per_page') }}:</label>
+                                            <select id="perPageSelect" class="form-select form-select-sm bg-dark text-light border-secondary" style="width: auto;">
+                                                <option value="10">10</option>
+                                                <option value="20" selected>20</option>
+                                                <option value="30">30</option>
+                                                <option value="50">50</option>
+                                                <option value="100">100</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <!-- 分页导航 -->
+                                        <nav aria-label="Signal pagination">
+                                            <ul class="pagination pagination-sm mb-0">
+                                                <!-- 首页按钮 -->
+                                                <li class="page-item disabled" id="firstPageBtn">
+                                                    <a class="page-link bg-transparent text-white border-secondary" href="#" aria-label="First">
+                                                        <span aria-hidden="true">&laquo;&laquo;</span>
+                                                    </a>
+                                                </li>
+                                                <!-- 上一页按钮 -->
+                                                <li class="page-item disabled" id="prevPageBtn">
+                                                    <a class="page-link bg-transparent text-white border-secondary" href="#" aria-label="Previous">
+                                                        <span aria-hidden="true">&laquo;</span>
+                                                    </a>
+                                                </li>
+                                                <!-- 页码按钮将在JS中动态生成 -->
+                                                <!-- 下一页按钮 -->
+                                                <li class="page-item disabled" id="nextPageBtn">
+                                                    <a class="page-link bg-transparent text-white border-secondary" href="#" aria-label="Next">
+                                                        <span aria-hidden="true">&raquo;</span>
+                                                    </a>
+                                                </li>
+                                                <!-- 末页按钮 -->
+                                                <li class="page-item disabled" id="lastPageBtn">
+                                                    <a class="page-link bg-transparent text-white border-secondary" href="#" aria-label="Last">
+                                                        <span aria-hidden="true">&raquo;&raquo;</span>
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </nav>
+                                        
+                                        <!-- 页码信息 -->
+                                        <div class="text-muted" id="currentPageInfo">
+                                            {{ t('loading_signals') }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- No signals message -->
+                        <div id="noSignalsMessage" class="text-center py-5" style="display: {% if signals %}none{% else %}block{% endif %};">
+                            <i class="bi bi-exclamation-circle text-warning fs-1"></i>
+                            <p class="mt-3 text-muted">{{ t('no_signals_found') }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-4 text-center text-muted">
+            <p>{{ t('footer') }} &copy; {{ now.year }}</p>
+        </footer>
+    </div>
+
+    <!-- Notification toast -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="notificationToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto" id="toastTitle">{{ t('notification') }}</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toastMessage"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Language-specific messages
+            const translations = {
+                'en': {
+                    'success': 'Success',
+                    'error': 'Error',
+                    'loading_signals': 'Loading signals...',
+                    'no_signals_found': 'No signals found with the current filters.',
+                    'export_success': 'Signals exported to CSV successfully',
+                    'signals_loaded': 'Signals loaded successfully',
+                    'filter_applied': 'Filter applied',
+                    'filters_reset': 'Filters reset to default',
+                    'page_info': 'Page {0} of {1} (Total: {2} signals)',
+                    'per_page': 'Per page',
+                    'auto_refresh_active': 'Auto-refresh active',
+                    'auto_refresh_disabled': 'Auto-refresh disabled',
+                    'enable_auto_refresh': 'Enable auto-refresh',
+                    'disable_auto_refresh': 'Disable auto-refresh',
+                    'new_signals_detected': '{0} new signal(s) detected'
+                },
+                'zh': {
+                    'success': '成功',
+                    'error': '错误',
+                    'loading_signals': '正在加载信号...',
+                    'no_signals_found': '当前筛选条件下没有找到信号。',
+                    'export_success': '信号已成功导出为CSV文件',
+                    'signals_loaded': '信号加载成功',
+                    'filter_applied': '筛选已应用',
+                    'filters_reset': '筛选已重置为默认值',
+                    'page_info': '第 {0} 页，共 {1} 页（总计：{2} 条信号）',
+                    'per_page': '每页显示',
+                    'auto_refresh_active': '自动刷新已启用',
+                    'auto_refresh_disabled': '自动刷新已停用',
+                    'enable_auto_refresh': '启用自动刷新',
+                    'disable_auto_refresh': '停用自动刷新',
+                    'new_signals_detected': '检测到 {0} 个新信号'
+                }
+            };
+            
+            // Get current language
+            const currentLang = '{{ lang }}';
+            
+            // Translation function
+            function t(key, ...args) {
+                let text = translations[currentLang][key] || key;
+                for (let i = 0; i < args.length; i++) {
+                    text = text.replace(`{${i}}`, args[i]);
+                }
+                return text;
+            }
+            
+            // Pagination state
+            const paginationState = {
+                currentPage: 1,
+                totalPages: 1,
+                perPage: 20,
+                totalCount: 0,
+                filters: {
+                    pair: '',
+                    signal_type: '',
+                    start_date: '',
+                    end_date: ''
+                }
+            };
+            
+            // Initialize date pickers
+            flatpickr("#startDate", {
+                enableTime: true,
+                dateFormat: "Y-m-d H:i",
+                theme: "dark"
+            });
+            
+            flatpickr("#endDate", {
+                enableTime: true,
+                dateFormat: "Y-m-d H:i",
+                theme: "dark"
+            });
+            
+            // Toast notification function
+            function showNotification(title, message, type = 'success') {
+                const toast = document.getElementById('notificationToast');
+                const toastTitle = document.getElementById('toastTitle');
+                const toastMessage = document.getElementById('toastMessage');
+                
+                toastTitle.textContent = title;
+                toastMessage.textContent = message;
+                
+                // Set toast class based on type
+                toast.className = 'toast';
+                if (type === 'success') {
+                    toast.classList.add('bg-success', 'text-white');
+                } else if (type === 'error') {
+                    toast.classList.add('bg-danger', 'text-white');
+                } else if (type === 'warning') {
+                    toast.classList.add('bg-warning', 'text-dark');
+                } else {
+                    toast.classList.add('bg-dark', 'text-light');
+                }
+                
+                const bsToast = new bootstrap.Toast(toast);
+                bsToast.show();
+            }
+            
+            // Function to update pagination UI
+            function updatePaginationUI() {
+                // Update page info text
+                const pageInfoElement = document.getElementById('currentPageInfo');
+                pageInfoElement.textContent = t('page_info', 
+                    paginationState.currentPage, 
+                    paginationState.totalPages, 
+                    paginationState.totalCount
+                );
+                
+                // Update pagination buttons
+                const prevPageBtn = document.getElementById('prevPageBtn');
+                const nextPageBtn = document.getElementById('nextPageBtn');
+                const firstPageBtn = document.getElementById('firstPageBtn');
+                const lastPageBtn = document.getElementById('lastPageBtn');
+                
+                // Previous button
+                if (paginationState.currentPage <= 1) {
+                    prevPageBtn.classList.add('disabled');
+                } else {
+                    prevPageBtn.classList.remove('disabled');
+                }
+                
+                // Next button
+                if (paginationState.currentPage >= paginationState.totalPages) {
+                    nextPageBtn.classList.add('disabled');
+                } else {
+                    nextPageBtn.classList.remove('disabled');
+                }
+
+                // First page button
+                if (paginationState.currentPage === 1) {
+                    firstPageBtn.classList.add('disabled');
+                } else {
+                    firstPageBtn.classList.remove('disabled');
+                }
+
+                // Last page button
+                if (paginationState.currentPage === paginationState.totalPages) {
+                    lastPageBtn.classList.add('disabled');
+                } else {
+                    lastPageBtn.classList.remove('disabled');
+                }
+                
+                // Get the pagination navigation element
+                const paginationNav = document.querySelector('nav[aria-label="Signal pagination"]').querySelector('ul');
+                
+                // Clear existing page number buttons (all except the navigation buttons)
+                const pageItems = paginationNav.querySelectorAll('li:not(#prevPageBtn):not(#nextPageBtn):not(#firstPageBtn):not(#lastPageBtn)');
+                pageItems.forEach(item => item.remove());
+                
+                // Calculate range of page numbers to show - always display exactly 5 page numbers if possible
+                // Center the current page in the middle of the 5 numbers
+                let startPage = Math.max(1, paginationState.currentPage - 2);
+                let endPage = Math.min(paginationState.totalPages, startPage + 4);
+                
+                // Adjust if we're near the end to always show 5 pages if possible
+                if (endPage - startPage < 4 && startPage > 1) {
+                    startPage = Math.max(1, endPage - 4);
+                }
+                
+                // If we have fewer than 5 pages total, just show all of them
+                if (paginationState.totalPages <= 5) {
+                    startPage = 1;
+                    endPage = paginationState.totalPages;
+                } else {
+                    // Ensure we always show exactly 5 pages when possible
+                    if (startPage === 1) {
+                        endPage = Math.min(5, paginationState.totalPages);
+                    } else if (endPage === paginationState.totalPages) {
+                        startPage = Math.max(1, paginationState.totalPages - 4);
+                    }
+                }
+                
+                // Insert page number buttons before the next button
+                const nextPageItem = document.getElementById('nextPageBtn');
+                
+                for (let i = startPage; i <= endPage; i++) {
+                    const pageItem = document.createElement('li');
+                    pageItem.classList.add('page-item');
+                    if (i === paginationState.currentPage) {
+                        pageItem.classList.add('active');
+                        pageLink.classList.remove('bg-transparent');
+                        pageLink.classList.add('bg-primary');
+                    }
+                    
+                    const pageLink = document.createElement('a');
+                    pageLink.classList.add('page-link', 'bg-transparent', 'text-white', 'border-secondary');
+                    pageLink.href = '#';
+                    pageLink.textContent = i;
+                    pageLink.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        goToPage(i);
+                    });
+                    
+                    pageItem.appendChild(pageLink);
+                    paginationNav.insertBefore(pageItem, nextPageItem);
+                }
+            }
+            
+            // Function to go to a specific page
+            function goToPage(page) {
+                if (page < 1 || page > paginationState.totalPages) {
+                    return;
+                }
+                
+                paginationState.currentPage = page;
+                loadSignals();
+            }
+            
+            // Function to load signals with filters and pagination
+            function loadSignals(isAutoRefresh = false) {
+                // Show loading spinner only if not auto-refreshing
+                if (!isAutoRefresh) {
+                    document.getElementById('loadingSpinner').style.display = '';
+                }
+                
+                // Get current filters
+                const filters = {
+                    pair: document.getElementById('pairFilter').value,
+                    signal_type: document.getElementById('signalTypeFilter').value,
+                    start_date: document.getElementById('startDate').value,
+                    end_date: document.getElementById('endDate').value
+                };
+                
+                // Update pagination state filters
+                paginationState.filters = filters;
+                
+                // Build query parameters
+                const params = new URLSearchParams();
+                if (filters.pair) params.append('pair', filters.pair);
+                if (filters.signal_type) params.append('signal_type', filters.signal_type);
+                if (filters.start_date) params.append('start_date', filters.start_date);
+                if (filters.end_date) params.append('end_date', filters.end_date);
+                
+                // Add pagination parameters
+                params.append('page', paginationState.currentPage);
+                params.append('per_page', paginationState.perPage);
+                
+                // Track previous total count to detect new signals
+                const previousTotalCount = paginationState.totalCount;
+                
+                // Fetch signals
+                fetch(`/api/signal_history?${params.toString()}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const signals = data.signals;
+                            
+                            // Update pagination state
+                            if (data.pagination) {
+                                paginationState.totalPages = data.pagination.total_pages;
+                                paginationState.totalCount = data.pagination.total_count;
+                                paginationState.currentPage = data.pagination.current_page;
+                                paginationState.perPage = data.pagination.per_page;
+                            }
+                            
+                            // Update pagination UI
+                            updatePaginationUI();
+                            
+                            // Update statistics
+                            document.getElementById('totalSignalsCount').textContent = paginationState.totalCount;
+                            
+                            // Clear existing table rows
+                            const tableBody = document.getElementById('signalsTableBody');
+                            tableBody.innerHTML = '';
+                            
+                            // Check if we have signals
+                            if (signals.length === 0) {
+                                document.getElementById('noSignalsMessage').style.display = 'block';
+                            } else {
+                                document.getElementById('noSignalsMessage').style.display = 'none';
+                                
+                                // Add signals to table
+                                signals.forEach(signal => {
+                                    // Calculate price change percentage
+                                    const prevPrice = signal.prev_price;
+                                    const currentPrice = signal.current_price;
+                                    const changePct = ((currentPrice - prevPrice) / prevPrice * 100).toFixed(2);
+                                    const changePctClass = changePct > 0 ? 'bg-success' : (changePct < 0 ? 'bg-danger' : 'bg-secondary');
+                                    
+                                    // Determine signal type badge
+                                    let signalTypeBadge = '';
+                                    if (signal.signal_type === 'level_cross_up') {
+                                        signalTypeBadge = `<span class="badge bg-success"><i class="bi bi-arrow-up me-1"></i>${currentLang === 'en' ? 'Level Cross Up' : '上穿点位'}</span>`;
+                                    } else if (signal.signal_type === 'level_cross_down') {
+                                        signalTypeBadge = `<span class="badge bg-danger"><i class="bi bi-arrow-down me-1"></i>${currentLang === 'en' ? 'Level Cross Down' : '下穿点位'}</span>`;
+                                    } else if (signal.signal_type === 'level_wick_up') {
+                                        signalTypeBadge = `<span class="badge bg-info"><i class="bi bi-arrow-bar-up me-1"></i>${currentLang === 'en' ? 'Wick Up Sweep' : '上影线扫动'}</span>`;
+                                    } else if (signal.signal_type === 'level_wick_down') {
+                                        signalTypeBadge = `<span class="badge bg-warning text-dark"><i class="bi bi-arrow-bar-down me-1"></i>${currentLang === 'en' ? 'Wick Down Sweep' : '下影线扫动'}</span>`;
+                                    } else {
+                                        signalTypeBadge = `<span class="badge bg-secondary"><i class="bi bi-lightning me-1"></i>${currentLang === 'en' ? 'ATR Surge' : 'ATR 剧增'}</span>`;
+                                    }
+                                    
+                                    // Determine level info
+                                    let levelInfo = '';
+                                    if (signal.level_price) {
+                                        levelInfo = `<span class="badge bg-primary">${signal.level_price} ${signal.level_id ? `(ID: ${signal.level_id})` : ''}</span>`;
+                                    } else if (signal.atr_value) {
+                                        levelInfo = `<span class="badge bg-info text-dark">ATR: ${signal.atr_value}</span>`;
+                                    } else {
+                                        levelInfo = '<span class="badge bg-secondary">-</span>';
+                                    }
+                                    
+                                    // Format signal time for better readability
+                                    const signalTime = new Date(signal.created_at).toLocaleString();
+                                    
+                                    // Create and append row
+                                    const row = document.createElement('tr');
+                                    
+                                    // If this is a newly added signal (only on auto-refresh), highlight it temporarily
+                                    if (isAutoRefresh && paginationState.currentPage === 1 && paginationState.totalCount > previousTotalCount) {
+                                        row.classList.add('new-signal');
+                                        
+                                        // Remove highlight after 5 seconds
+                                        setTimeout(() => {
+                                            row.classList.remove('new-signal');
+                                        }, 5000);
+                                    }
+                                    
+                                    row.innerHTML = `
+                                        <td>${signalTime}</td>
+                                        <td><span class="badge bg-dark text-light border border-light">${signal.pair}</span></td>
+                                        <td>${signalTypeBadge}</td>
+                                        <td class="text-muted">${signal.prev_price}</td>
+                                        <td class="text-info">${signal.current_price}</td>
+                                        <td><span class="badge ${changePctClass}">${changePct}%</span></td>
+                                        <td>${levelInfo}</td>
+                                    `;
+                                    tableBody.appendChild(row);
+                                });
+                            }
+                            
+                            // Show notification for manual refresh or when new signals are detected
+                            if (!isAutoRefresh) {
+                                showNotification(t('success'), t('signals_loaded'), 'success');
+                            } else if (paginationState.totalCount > previousTotalCount) {
+                                // Show notification for new signals during auto-refresh
+                                const newSignalsCount = paginationState.totalCount - previousTotalCount;
+                                showNotification(
+                                    t('success'), 
+                                    t('new_signals_detected', newSignalsCount),
+                                    'success'
+                                );
+                            }
+                        } else {
+                            if (!isAutoRefresh) {
+                                showNotification(t('error'), data.error, 'error');
+                            } else {
+                                console.error('Auto-refresh error:', data.error);
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        if (!isAutoRefresh) {
+                            showNotification(t('error'), error.toString(), 'error');
+                        }
+                    })
+                    .finally(() => {
+                        // Hide loading spinner
+                        document.getElementById('loadingSpinner').style.display = 'none';
+                    });
+            }
+            
+            // Filter form submission
+            document.getElementById('filterForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Reset to first page when applying new filters
+                paginationState.currentPage = 1;
+                
+                loadSignals();
+                showNotification(t('success'), t('filter_applied'), 'success');
+            });
+            
+            // Reset filters button
+            document.getElementById('resetFilters').addEventListener('click', function() {
+                document.getElementById('pairFilter').value = '';
+                document.getElementById('signalTypeFilter').value = '';
+                document.getElementById('startDate').value = '';
+                document.getElementById('endDate').value = '';
+                
+                // Reset to first page
+                paginationState.currentPage = 1;
+                
+                // Load signals with default filters
+                loadSignals();
+                
+                showNotification(t('success'), t('filters_reset'), 'success');
+            });
+            
+            // Previous page button
+            document.getElementById('prevPageBtn').addEventListener('click', function(e) {
+                e.preventDefault();
+                if (paginationState.currentPage > 1) {
+                    goToPage(paginationState.currentPage - 1);
+                }
+            });
+            
+            // Next page button
+            document.getElementById('nextPageBtn').addEventListener('click', function(e) {
+                e.preventDefault();
+                if (paginationState.currentPage < paginationState.totalPages) {
+                    goToPage(paginationState.currentPage + 1);
+                }
+            });
+
+            // First page button
+            document.getElementById('firstPageBtn').addEventListener('click', function(e) {
+                e.preventDefault();
+                if (paginationState.currentPage > 1) {
+                    goToPage(1);
+                }
+            });
+
+            // Last page button
+            document.getElementById('lastPageBtn').addEventListener('click', function(e) {
+                e.preventDefault();
+                if (paginationState.currentPage < paginationState.totalPages) {
+                    goToPage(paginationState.totalPages);
+                }
+            });
+
+            // Per page dropdown
+            document.getElementById('perPageSelect').addEventListener('change', function() {
+                // Update per page value in pagination state
+                paginationState.perPage = parseInt(this.value);
+                
+                // Reset to first page when changing items per page
+                paginationState.currentPage = 1;
+                
+                // Reload signals with new per page value
+                loadSignals();
+            });
+            
+            // Set up automatic polling every minute
+            let pollingInterval;
+            let isPollingEnabled = true; // Track if polling is enabled
+            
+            function startPolling() {
+                // Clear any existing interval
+                if (pollingInterval) {
+                    clearInterval(pollingInterval);
+                }
+                
+                // Only start if polling is enabled
+                if (!isPollingEnabled) return;
+                
+                // Set up new polling interval (60000 ms = 1 minute)
+                pollingInterval = setInterval(function() {
+                    // Only reload if we're on the first page to avoid disrupting user navigation
+                    if (paginationState.currentPage === 1) {
+                        console.log("Auto-polling: Refreshing signal data...");
+                        loadSignals(true); // Pass true to indicate this is an auto-refresh
+                    }
+                }, 60000);
+                
+                // Update UI to show active status
+                updatePollingStatusUI(true);
+                
+                console.log("Auto-polling started: Signal data will refresh every minute");
+            }
+            
+            function stopPolling() {
+                if (pollingInterval) {
+                    clearInterval(pollingInterval);
+                    pollingInterval = null;
+                    console.log("Auto-polling stopped");
+                }
+                
+                // Update UI to show inactive status
+                updatePollingStatusUI(false);
+            }
+            
+            function updatePollingStatusUI(isActive) {
+                const statusDot = document.querySelector('#autoRefreshIndicator .status-dot');
+                const statusText = document.querySelector('#autoRefreshIndicator .status-text');
+                const toggleBtn = document.getElementById('toggleAutoRefreshBtn');
+                const btnText = document.getElementById('autoRefreshBtnText');
+                
+                if (isActive) {
+                    statusDot.classList.remove('inactive');
+                    statusDot.classList.add('active');
+                    statusText.textContent = t('auto_refresh_active');
+                    btnText.textContent = t('disable_auto_refresh');
+                } else {
+                    statusDot.classList.remove('active');
+                    statusDot.classList.add('inactive');
+                    statusText.textContent = t('auto_refresh_disabled');
+                    btnText.textContent = t('enable_auto_refresh');
+                }
+            }
+            
+            // Toggle auto-refresh button
+            document.getElementById('toggleAutoRefreshBtn').addEventListener('click', function() {
+                isPollingEnabled = !isPollingEnabled;
+                
+                if (isPollingEnabled) {
+                    startPolling();
+                    // Refresh immediately when enabling
+                    loadSignals(true);
+                } else {
+                    stopPolling();
+                }
+            });
+            
+            // Start polling when page loads
+            startPolling();
+            
+            // Stop polling when window is hidden to save resources
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    if (isPollingEnabled) {
+                        stopPolling();
+                        // Remember that we should restart when visible again
+                        document.body.dataset.restartPollingOnVisible = 'true';
+                    }
+                } else if (document.body.dataset.restartPollingOnVisible === 'true') {
+                    // Only restart if it was previously enabled
+                    delete document.body.dataset.restartPollingOnVisible;
+                    startPolling();
+                    // Refresh immediately when page becomes visible again
+                    loadSignals(true);
+                }
+            });
+            
+            // Export to CSV
+            document.getElementById('exportCsv').addEventListener('click', function() {
+                // Get current filters
+                const filters = {
+                    pair: document.getElementById('pairFilter').value,
+                    signal_type: document.getElementById('signalTypeFilter').value,
+                    start_date: document.getElementById('startDate').value,
+                    end_date: document.getElementById('endDate').value,
+                    limit: 1000  // Higher limit for export
+                };
+                
+                // Build query parameters
+                const params = new URLSearchParams();
+                if (filters.pair) params.append('pair', filters.pair);
+                if (filters.signal_type) params.append('signal_type', filters.signal_type);
+                if (filters.start_date) params.append('start_date', filters.start_date);
+                if (filters.end_date) params.append('end_date', filters.end_date);
+                if (filters.limit) params.append('limit', filters.limit);
+                
+                // Fetch signals
+                fetch(`/api/signal_history?${params.toString()}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.signals.length > 0) {
+                            const signals = data.signals;
+                            
+                            // Create CSV header
+                            let csvContent = "data:text/csv;charset=utf-8,";
+                            csvContent += "Signal Time,Trading Pair,Signal Type,Previous Price,Current Price,Price Change %,Level ID,Level Price,ATR Value\n";
+                            
+                            // Add signals to CSV
+                            signals.forEach(signal => {
+                                const prevPrice = signal.prev_price;
+                                const currentPrice = signal.current_price;
+                                const changePct = ((currentPrice - prevPrice) / prevPrice * 100).toFixed(2);
+                                
+                                const row = [
+                                    signal.created_at,
+                                    signal.pair,
+                                    signal.signal_type,
+                                    signal.prev_price,
+                                    signal.current_price,
+                                    changePct,
+                                    signal.level_id || "",
+                                    signal.level_price || "",
+                                    signal.atr_value || ""
+                                ];
+                                
+                                csvContent += row.join(",") + "\n";
+                            });
+                            
+                            // Create download link
+                            const encodedUri = encodeURI(csvContent);
+                            const link = document.createElement("a");
+                            link.setAttribute("href", encodedUri);
+                            link.setAttribute("download", `signal_history_${new Date().toISOString().split('T')[0]}.csv`);
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            
+                            showNotification(t('success'), t('export_success'), 'success');
+                        } else {
+                            showNotification(t('error'), t('no_signals_found'), 'warning');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showNotification(t('error'), error.toString(), 'error');
+                    });
+            });
+            
+            // Load signals on page load
+            loadSignals();
+        });
+    </script>
+</body>
+</html> 

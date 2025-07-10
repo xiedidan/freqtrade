@@ -1,0 +1,33 @@
+
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('error_title') }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-dark text-light">
+    <div class="container mt-5">
+        <div class="card bg-dark border-danger">
+            <div class="card-header bg-danger bg-gradient text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ t('error') }}
+                </h4>
+            </div>
+            <div class="card-body">
+                <p class="lead">{{ error }}</p>
+                <hr class="border-secondary">
+                <div class="d-grid gap-2">
+                    <a href="/" class="btn btn-primary">
+                        <i class="bi bi-house-door me-2"></i>{{ t('return_home') }}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+    
