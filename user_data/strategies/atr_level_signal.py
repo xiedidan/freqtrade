@@ -4,6 +4,7 @@ import os
 from typing import ClassVar, Optional, List, Dict, Any
 from datetime import datetime
 import traceback
+import pandas as pd
 
 from sqlalchemy import String, Float, Integer, DateTime, select, delete, create_engine
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker, scoped_session
@@ -291,8 +292,20 @@ class ATRLevelSignal(IStrategy):
                 logger.info(f"Using default database path: {db_path}")
             
             # Initialize database
-            init_db(ATRLevelSignal.db_url)
+            engine = create_engine(ATRLevelSignal.db_url)
+            # Create tables if they don't exist
+            ModelBase.metadata.create_all(engine)
+            # Create scoped session factory
+            session_factory = sessionmaker(bind=engine)
+            session = scoped_session(session_factory)
+            
+            # Assign session to model classes
+            PriceLevel.session = session
+            SignalHistory.session = session
+            
             logger.info(f"Database initialized with URL: {ATRLevelSignal.db_url}")
+            logger.info(f"Database session created and assigned to models")
+            
             ATRLevelSignal.db_initialized = True
             
         except Exception as e:
@@ -349,69 +362,199 @@ class ATRLevelSignal(IStrategy):
                         level_direction = level.direction
                         require_close_confirm = bool(level.confirm_close)
                         
+                        # 添加调试日志
+                        last_candle_index = len(dataframe) - 1
+                        if last_candle_index >= 0:
+                            last_candle = dataframe.iloc[last_candle_index]
+                            prev_candle = dataframe.iloc[last_candle_index-1] if last_candle_index > 0 else None
+                            
+                            logger.info(f"===== 调试信息 - {pair} - 价格水平: {level_price} =====")
+                            logger.info(f"方向: {level_direction}, 需要收盘确认: {require_close_confirm}")
+                            
+                            if prev_candle is not None:
+                                logger.info(f"上一根K线 - 开盘: {prev_candle['open']}, 收盘: {prev_candle['close']}, 最高: {prev_candle['high']}, 最低: {prev_candle['low']}")
+                            
+                            logger.info(f"当前K线 - 开盘: {last_candle['open']}, 收盘: {last_candle['close']}, 最高: {last_candle['high']}, 最低: {last_candle['low']}")
+                        
                         # 检测实体向上突破（价格从下方穿过水平）
                         if level_direction in [LevelDirection.UP, LevelDirection.BOTH]:
                             if require_close_confirm:
                                 # 只有当K线收盘价高于水平时才触发
                                 cross_up = (dataframe['close_prev'] < level_price) & (dataframe['close'] > level_price)
+                                
+                                # 添加调试日志
+                                if last_candle_index >= 0 and prev_candle is not None:
+                                    condition1 = prev_candle['close'] < level_price
+                                    condition2 = last_candle['close'] > level_price
+                                    final_condition = condition1 and condition2
+                                    logger.info(f"向上突破(收盘确认) - 条件1(上一收盘<水平): {condition1}, 条件2(当前收盘>水平): {condition2}, 最终结果: {final_condition}")
+                                    
+                                    # 检查cross_up的值
+                                    has_cross_up = cross_up.any() if isinstance(cross_up, pd.Series) else bool(cross_up)
+                                    logger.info(f"cross_up.any()的值: {has_cross_up}")
+                                    
+                                    # 强制检查最后一根K线的条件
+                                    last_candle_condition = final_condition
+                                    
+                                    # 只有当最后一根K线满足条件时才设置信号
+                                    if last_candle_condition:
+                                        logger.info(f"UP CROSS detected for {pair} at level {level_price} (ID: {level.id})")
+                                        # 只对满足条件的K线设置信号
+                                        cross_up_indices = cross_up if isinstance(cross_up, pd.Series) else pd.Series([cross_up], index=[last_candle_index])
+                                        dataframe.loc[cross_up_indices, 'level_cross_up'] = 1
+                                        dataframe.loc[cross_up_indices, 'level_id'] = level.id
+                                        dataframe.loc[cross_up_indices, 'level_price'] = level_price
                             else:
                                 # 当K线实体任何部分穿过水平时触发（开盘价或收盘价）
                                 cross_up = (dataframe['close_prev'] < level_price) & (
                                     (dataframe['open'] > level_price) | (dataframe['close'] > level_price)
                                 )
-                            
-                            # 设置向上突破信号并存储水平信息
-                            if cross_up.any():
-                                logger.info(f"UP CROSS detected for {pair} at level {level_price} (ID: {level.id})")
-                            
-                            dataframe.loc[cross_up, 'level_cross_up'] = 1
-                            dataframe.loc[cross_up, 'level_id'] = level.id
-                            dataframe.loc[cross_up, 'level_price'] = level_price
+                                
+                                # 添加调试日志
+                                if last_candle_index >= 0 and prev_candle is not None:
+                                    condition1 = prev_candle['close'] < level_price
+                                    condition2 = last_candle['open'] > level_price
+                                    condition3 = last_candle['close'] > level_price
+                                    final_condition = condition1 and (condition2 or condition3)
+                                    logger.info(f"向上突破(非收盘确认) - 条件1(上一收盘<水平): {condition1}, 条件2(当前开盘>水平): {condition2}, 条件3(当前收盘>水平): {condition3}, 最终结果: {final_condition}")
+                                    
+                                    # 检查cross_up的值
+                                    has_cross_up = cross_up.any() if isinstance(cross_up, pd.Series) else bool(cross_up)
+                                    logger.info(f"cross_up.any()的值: {has_cross_up}")
+                                    
+                                    # 强制检查最后一根K线的条件
+                                    last_candle_condition = condition1 and (condition2 or condition3)
+                                    
+                                    # 只有当最后一根K线满足条件时才设置信号
+                                    if last_candle_condition:
+                                        logger.info(f"UP CROSS detected for {pair} at level {level_price} (ID: {level.id})")
+                                        # 只对满足条件的K线设置信号
+                                        cross_up_indices = cross_up if isinstance(cross_up, pd.Series) else pd.Series([cross_up], index=[last_candle_index])
+                                        dataframe.loc[cross_up_indices, 'level_cross_up'] = 1
+                                        dataframe.loc[cross_up_indices, 'level_id'] = level.id
+                                        dataframe.loc[cross_up_indices, 'level_price'] = level_price
                         
                         # 检测实体向下突破（价格从上方穿过水平）
                         if level_direction in [LevelDirection.DOWN, LevelDirection.BOTH]:
                             if require_close_confirm:
                                 # 只有当K线收盘价低于水平时才触发
                                 cross_down = (dataframe['close_prev'] > level_price) & (dataframe['close'] < level_price)
+                                
+                                # 添加调试日志
+                                if last_candle_index >= 0 and prev_candle is not None:
+                                    condition1 = prev_candle['close'] > level_price
+                                    condition2 = last_candle['close'] < level_price
+                                    final_condition = condition1 and condition2
+                                    logger.info(f"向下突破(收盘确认) - 条件1(上一收盘>水平): {condition1}, 条件2(当前收盘<水平): {condition2}, 最终结果: {final_condition}")
+                                    
+                                    # 检查cross_down的值
+                                    has_cross_down = cross_down.any() if isinstance(cross_down, pd.Series) else bool(cross_down)
+                                    logger.info(f"cross_down.any()的值: {has_cross_down}")
+                                    
+                                    # 强制检查最后一根K线的条件
+                                    last_candle_condition = final_condition
+                                    
+                                    # 只有当最后一根K线满足条件时才设置信号
+                                    if last_candle_condition:
+                                        logger.info(f"DOWN CROSS detected for {pair} at level {level_price} (ID: {level.id})")
+                                        # 只对满足条件的K线设置信号
+                                        cross_down_indices = cross_down if isinstance(cross_down, pd.Series) else pd.Series([cross_down], index=[last_candle_index])
+                                        dataframe.loc[cross_down_indices, 'level_cross_down'] = 1
+                                        dataframe.loc[cross_down_indices, 'level_id'] = level.id
+                                        dataframe.loc[cross_down_indices, 'level_price'] = level_price
                             else:
                                 # 当K线实体任何部分穿过水平时触发（开盘价或收盘价）
                                 cross_down = (dataframe['close_prev'] > level_price) & (
                                     (dataframe['open'] < level_price) | (dataframe['close'] < level_price)
                                 )
-                            
-                            # 设置向下突破信号并存储水平信息
-                            if cross_down.any():
-                                logger.info(f"DOWN CROSS detected for {pair} at level {level_price} (ID: {level.id})")
-                            
-                            dataframe.loc[cross_down, 'level_cross_down'] = 1
-                            dataframe.loc[cross_down, 'level_id'] = level.id
-                            dataframe.loc[cross_down, 'level_price'] = level_price
+                                
+                                # 添加调试日志
+                                if last_candle_index >= 0 and prev_candle is not None:
+                                    condition1 = prev_candle['close'] > level_price
+                                    condition2 = last_candle['open'] < level_price
+                                    condition3 = last_candle['close'] < level_price
+                                    final_condition = condition1 and (condition2 or condition3)
+                                    logger.info(f"向下突破(非收盘确认) - 条件1(上一收盘>水平): {condition1}, 条件2(当前开盘<水平): {condition2}, 条件3(当前收盘<水平): {condition3}, 最终结果: {final_condition}")
+                                    
+                                    # 检查cross_down的值
+                                    has_cross_down = cross_down.any() if isinstance(cross_down, pd.Series) else bool(cross_down)
+                                    logger.info(f"cross_down.any()的值: {has_cross_down}")
+                                    
+                                    # 强制检查最后一根K线的条件
+                                    last_candle_condition = condition1 and (condition2 or condition3)
+                                    
+                                    # 只有当最后一根K线满足条件时才设置信号
+                                    if last_candle_condition:
+                                        logger.info(f"DOWN CROSS detected for {pair} at level {level_price} (ID: {level.id})")
+                                        # 只对满足条件的K线设置信号
+                                        cross_down_indices = cross_down if isinstance(cross_down, pd.Series) else pd.Series([cross_down], index=[last_candle_index])
+                                        dataframe.loc[cross_down_indices, 'level_cross_down'] = 1
+                                        dataframe.loc[cross_down_indices, 'level_id'] = level.id
+                                        dataframe.loc[cross_down_indices, 'level_price'] = level_price
                             
                         # 检测上影线流动性清扫（上影线穿过水平但实体没有）
                         if level_direction in [LevelDirection.WICK_UP, LevelDirection.WICK_BOTH]:
-                            # 上影线穿过水平但实体保持在水平下方
-                            wick_up = (dataframe['high'] > level_price) & (dataframe['close'] < level_price) & (dataframe['open'] < level_price)
+                            # 修正：上影线穿过水平但实体保持在水平下方
+                            # 确保上一根K线的高点低于水平，当前K线的高点高于水平，而且当前K线的开盘和收盘都低于水平
+                            wick_up = (dataframe['high'].shift(1) < level_price) & (dataframe['high'] > level_price) & \
+                                     (dataframe['close'] < level_price) & (dataframe['open'] < level_price)
                             
-                            # 设置上影线流动性清扫信号并存储水平信息
-                            if wick_up.any():
-                                logger.info(f"WICK UP detected for {pair} at level {level_price} (ID: {level.id})")
-                            
-                            dataframe.loc[wick_up, 'level_wick_up'] = 1
-                            dataframe.loc[wick_up, 'level_id'] = level.id
-                            dataframe.loc[wick_up, 'level_price'] = level_price
+                            # 添加调试日志
+                            if last_candle_index >= 0 and prev_candle is not None:
+                                condition1 = prev_candle['high'] < level_price
+                                condition2 = last_candle['high'] > level_price
+                                condition3 = last_candle['close'] < level_price
+                                condition4 = last_candle['open'] < level_price
+                                final_condition = condition1 and condition2 and condition3 and condition4
+                                logger.info(f"上影线流动性清扫 - 条件1(上一高点<水平): {condition1}, 条件2(当前高点>水平): {condition2}, 条件3(当前收盘<水平): {condition3}, 条件4(当前开盘<水平): {condition4}, 最终结果: {final_condition}")
+                                
+                                # 检查wick_up的值
+                                has_wick_up = wick_up.any() if isinstance(wick_up, pd.Series) else bool(wick_up)
+                                logger.info(f"wick_up.any()的值: {has_wick_up}")
+                                
+                                # 强制检查最后一根K线的条件
+                                last_candle_condition = final_condition
+                                
+                                # 只有当最后一根K线满足条件时才设置信号
+                                if last_candle_condition:
+                                    logger.info(f"WICK UP detected for {pair} at level {level_price} (ID: {level.id})")
+                                    # 只对满足条件的K线设置信号
+                                    wick_up_indices = wick_up if isinstance(wick_up, pd.Series) else pd.Series([wick_up], index=[last_candle_index])
+                                    dataframe.loc[wick_up_indices, 'level_wick_up'] = 1
+                                    dataframe.loc[wick_up_indices, 'level_id'] = level.id
+                                    dataframe.loc[wick_up_indices, 'level_price'] = level_price
                         
                         # 检测下影线流动性清扫（下影线穿过水平但实体没有）
                         if level_direction in [LevelDirection.WICK_DOWN, LevelDirection.WICK_BOTH]:
-                            # 下影线穿过水平但实体保持在水平上方
-                            wick_down = (dataframe['low'] < level_price) & (dataframe['close'] > level_price) & (dataframe['open'] > level_price)
+                            # 修正：下影线穿过水平但实体保持在水平上方
+                            # 确保上一根K线的低点高于水平，当前K线的低点低于水平，而且当前K线的开盘和收盘都高于水平
+                            wick_down = (dataframe['low'].shift(1) > level_price) & (dataframe['low'] < level_price) & \
+                                       (dataframe['close'] > level_price) & (dataframe['open'] > level_price)
                             
-                            # 设置下影线流动性清扫信号并存储水平信息
-                            if wick_down.any():
-                                logger.info(f"WICK DOWN detected for {pair} at level {level_price} (ID: {level.id})")
-                            
-                            dataframe.loc[wick_down, 'level_wick_down'] = 1
-                            dataframe.loc[wick_down, 'level_id'] = level.id
-                            dataframe.loc[wick_down, 'level_price'] = level_price
+                            # 添加调试日志
+                            if last_candle_index >= 0 and prev_candle is not None:
+                                condition1 = prev_candle['low'] > level_price
+                                condition2 = last_candle['low'] < level_price
+                                condition3 = last_candle['close'] > level_price
+                                condition4 = last_candle['open'] > level_price
+                                final_condition = condition1 and condition2 and condition3 and condition4
+                                logger.info(f"下影线流动性清扫 - 条件1(上一低点>水平): {condition1}, 条件2(当前低点<水平): {condition2}, 条件3(当前收盘>水平): {condition3}, 条件4(当前开盘>水平): {condition4}, 最终结果: {final_condition}")
+                                
+                                # 检查wick_down的值
+                                has_wick_down = wick_down.any() if isinstance(wick_down, pd.Series) else bool(wick_down)
+                                logger.info(f"wick_down.any()的值: {has_wick_down}")
+                                
+                                # 强制检查最后一根K线的条件
+                                last_candle_condition = final_condition
+                                
+                                # 只有当最后一根K线满足条件时才设置信号
+                                if last_candle_condition:
+                                    logger.info(f"WICK DOWN detected for {pair} at level {level_price} (ID: {level.id})")
+                                    # 只对满足条件的K线设置信号
+                                    wick_down_indices = wick_down if isinstance(wick_down, pd.Series) else pd.Series([wick_down], index=[last_candle_index])
+                                    dataframe.loc[wick_down_indices, 'level_wick_down'] = 1
+                                    dataframe.loc[wick_down_indices, 'level_id'] = level.id
+                                    dataframe.loc[wick_down_indices, 'level_price'] = level_price
                             
                 except SQLAlchemyError as e:
                     logger.error(f"Database error checking price levels: {e}")
